@@ -1,0 +1,13 @@
+.env
+.venv
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+logs/
+workspaces/
+tmp_test_manual_ok/
+orchestrator.sqlite3
+*.sqlite3
+*.db
+.git/

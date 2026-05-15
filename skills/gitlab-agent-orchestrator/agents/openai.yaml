@@ -1,0 +1,3 @@
+display_name: GitLab Agent Orchestrator
+short_description: Install and operate the GitLab agent service.
+default_prompt: Set up this GitLab Agent Orchestrator service for a new user.

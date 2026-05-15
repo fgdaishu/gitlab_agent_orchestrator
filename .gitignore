@@ -1,0 +1,14 @@
+.env
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+*.sqlite3
+*.db
+workspaces/
+logs/
+dist/
+build/
+*.egg-info/
+tmp_test_manual_ok/
+tmp_test_*/
