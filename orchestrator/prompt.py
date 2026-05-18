@@ -5,6 +5,20 @@ from pathlib import Path
 from .models import Job
 
 RULE_FILES = ("AGENTS.md", "CODEX.md", "CONTRIBUTING.md")
+TEST_REQUEST_KEYWORDS = (
+    "test",
+    "tests",
+    "testing",
+    "pytest",
+    "jest",
+    "npm test",
+    "unit test",
+    "测试",
+    "单测",
+    "跑测试",
+    "验证",
+    "编译并测试",
+)
 
 
 def read_project_rules(repo: Path) -> str:
@@ -21,6 +35,13 @@ def build_prompt(job: Job, project_rules: str, comments: list[str] | None = None
     if comments:
         comment_block = "\nIssue comments, oldest to newest:\n" + "\n\n".join(f"- {comment}" for comment in comments[-20:]) + "\n"
     mode = "This issue already has an agent branch. Continue from the current branch state and implement only the new or still-missing requested changes." if is_incremental else "This is the first agent pass for this issue."
+    requested_text = "\n".join([job.issue_title, job.issue_description, *(comments or [])]).lower()
+    should_test = any(keyword in requested_text for keyword in TEST_REQUEST_KEYWORDS)
+    test_instruction = (
+        "- The issue explicitly asks for testing or verification. Run the relevant tests/build/checks if practical, and fix failures caused by your changes."
+        if should_test
+        else "- Do not run broad test suites unless needed for your implementation; the issue did not explicitly ask for testing."
+    )
     return f"""Implement the following GitLab issue now. Modify the repository files directly in the current working directory.
 
 Task source:
@@ -44,7 +65,7 @@ Rules:
 - Leave all file changes unstaged or staged for the orchestrator to commit and push.
 - Do not commit secrets.
 - Prefer small, reviewable changes.
-- Run available tests if possible.
+{test_instruction}
 - If the task is ambiguous, make the smallest reasonable implementation and document assumptions.
 - Do not push directly to main/master.
 

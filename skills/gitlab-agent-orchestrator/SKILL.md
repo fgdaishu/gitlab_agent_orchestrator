@@ -19,6 +19,7 @@ Use this skill as the operator runbook for the GitLab Agent Orchestrator reposit
 6. Give the user the webhook URL: `http://<orchestrator-host-ip>:8080/gitlab/webhook`, plus the `GITLAB_WEBHOOK_SECRET` value they configured.
 7. For Codex or Gemini, initialize auth inside the project sandbox after the first project container exists, or use API keys through `SANDBOX_PASS_ENV`.
 8. Test with a GitLab issue label: `agent:opencode`, `agent:codex`, or `agent:gemini`.
+9. Do not expect orchestrator-level automatic validation. If a user wants tests, tell them to write that requirement in the issue or comment so the agent runs tests as part of its task.
 
 ## Scripts
 

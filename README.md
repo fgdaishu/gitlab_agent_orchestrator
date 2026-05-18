@@ -125,7 +125,9 @@ gitlab-agent-project-<project_id>-workspace
   logs/
 ```
 
-In `docker_project` mode, git operations, agent execution, and validation run inside the container via `docker exec`. Repository files are not synchronized back to the Windows host; changes are pushed to GitLab from inside the container. The MVP keeps a project-level lock, so only one job per project runs at a time.
+In `docker_project` mode, git operations and agent execution run inside the container via `docker exec`. Repository files are not synchronized back to the Windows host; changes are pushed to GitLab from inside the container. The MVP keeps a project-level lock, so only one job per project runs at a time.
+
+The orchestrator does not enforce an automatic validation step by default. If the issue or follow-up comments explicitly ask for tests, the prompt tells the agent to run the relevant tests/build/checks and fix failures. Otherwise, producing code changes is enough for the job to proceed to branch push and MR creation.
 
 The sandbox image must contain the tools you want to use, for example `git`, `node`, `python`, `opencode`, `codex`, and `gemini`. Project-specific setup can be configured with:
 

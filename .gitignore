@@ -10,5 +10,5 @@ logs/
 dist/
 build/
 *.egg-info/
-tmp_test_manual_ok/
-tmp_test_*/
+CURRENT_PROGRESS.md
+gitlab_agent_orchestrator_prd.md

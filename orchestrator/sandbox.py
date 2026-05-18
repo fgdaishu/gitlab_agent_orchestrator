@@ -10,7 +10,7 @@ from pathlib import Path
 from .agent import AgentResult, BLOCKED_INHERITED_ENV
 from .config import Settings
 from .db import JobStore
-from .git_ops import CommandError
+from .git_ops import CommandError, redact_sensitive_text
 from .models import Job
 
 
@@ -146,6 +146,8 @@ class DockerProjectSandbox:
             self.exec(["git", "remote", "set-url", "origin", repo_url], cwd=CONTAINER_REPO, timeout=timeout)
 
         self.exec(["git", "fetch", "origin", "--prune"], cwd=CONTAINER_REPO, timeout=timeout)
+        self._ensure_remote_base_branch(base, timeout)
+        self.exec(["git", "fetch", "origin", "--prune"], cwd=CONTAINER_REPO, timeout=timeout)
         current = self.exec(["git", "branch", "--show-current"], cwd=CONTAINER_REPO, timeout=timeout).strip()
         if current == branch:
             self.clean_worktree(timeout)
@@ -161,11 +163,14 @@ class DockerProjectSandbox:
         self.clean_worktree(timeout)
 
     def clean_worktree(self, timeout: int) -> None:
-        self.exec(["git", "reset", "--hard"], cwd=CONTAINER_REPO, timeout=timeout)
+        self._try_exec(["git", "reset", "--hard"], cwd=CONTAINER_REPO, timeout=timeout)
         self.exec(["git", "clean", "-fd"], cwd=CONTAINER_REPO, timeout=timeout)
 
     def current_head(self, timeout: int) -> str:
-        return self.exec(["git", "rev-parse", "HEAD"], cwd=CONTAINER_REPO, timeout=timeout).strip()
+        try:
+            return self.exec(["git", "rev-parse", "HEAD"], cwd=CONTAINER_REPO, timeout=timeout).strip()
+        except CommandError:
+            return ""
 
     def has_changes(self, timeout: int) -> bool:
         return bool(self.exec(["git", "status", "--porcelain"], cwd=CONTAINER_REPO, timeout=timeout).strip())
@@ -223,15 +228,18 @@ class DockerProjectSandbox:
             ]
             if self.settings.sandbox_opencode_model:
                 command[2:2] = ["--model", self.settings.sandbox_opencode_model]
-            self.exec_live(
-                command,
-                cwd=CONTAINER_REPO,
-                output_path=output_file,
-                timeout=timeout,
-                cancel_file=cancel_file,
-                pid_file=pid_file,
-                idle_success_after_changes=True,
-            )
+            try:
+                self.exec_live(
+                    command,
+                    cwd=CONTAINER_REPO,
+                    output_path=output_file,
+                    timeout=timeout,
+                    cancel_file=cancel_file,
+                    pid_file=pid_file,
+                    idle_success_after_changes=True,
+                )
+            finally:
+                self._cleanup_agent_process(self.settings.sandbox_opencode_command)
         elif agent == "codex":
             self.ensure_agent_ready(agent)
             command = [
@@ -241,19 +249,25 @@ class DockerProjectSandbox:
                 "--skip-git-repo-check",
                 "-",
             ]
-            self.exec_live(
-                command,
-                cwd=CONTAINER_REPO,
-                output_path=output_file,
-                timeout=timeout,
-                cancel_file=cancel_file,
-                pid_file=pid_file,
-                stdin_text=prompt,
-            )
+            try:
+                self.exec_live(
+                    command,
+                    cwd=CONTAINER_REPO,
+                    output_path=output_file,
+                    timeout=timeout,
+                    cancel_file=cancel_file,
+                    pid_file=pid_file,
+                    stdin_text=prompt,
+                )
+            finally:
+                self._cleanup_agent_process(self.settings.sandbox_codex_command)
         elif agent == "gemini-cli":
             self.ensure_agent_ready(agent)
             command = [self.settings.sandbox_gemini_command, "--yolo", "--prompt", prompt]
-            self.exec_live(command, cwd=CONTAINER_REPO, output_path=output_file, timeout=timeout, cancel_file=cancel_file, pid_file=pid_file)
+            try:
+                self.exec_live(command, cwd=CONTAINER_REPO, output_path=output_file, timeout=timeout, cancel_file=cancel_file, pid_file=pid_file)
+            finally:
+                self._cleanup_agent_process(self.settings.sandbox_gemini_command)
         else:
             raise ValueError(f"Unsupported agent for docker_project backend: {agent}")
 
@@ -269,8 +283,29 @@ class DockerProjectSandbox:
         return "\n\n".join(chunks)
 
     def run_validation(self, timeout: int) -> str:
+        if self._container_path_exists(f"{CONTAINER_REPO}/package.json"):
+            installed_deps = False
+            if not self._container_path_exists(f"{CONTAINER_REPO}/node_modules"):
+                installed_deps = True
+                try:
+                    self.exec_shell(
+                        "rm -rf node_modules && if test -f package-lock.json; then npm ci; else npm install --no-package-lock; fi",
+                        cwd=CONTAINER_REPO,
+                        timeout=timeout,
+                    )
+                except CommandError as exc:
+                    self.exec_shell("rm -rf node_modules", cwd=CONTAINER_REPO, timeout=timeout)
+                    raise RuntimeError(f"npm install failed\n{redact_sensitive_text(exc.output[-4000:])}") from exc
+            try:
+                output = self.exec(["npm", "test"], cwd=CONTAINER_REPO, timeout=timeout)
+                return f"npm test: passed\n{output[-2000:]}"
+            except CommandError as exc:
+                raise RuntimeError(f"npm test failed\n{redact_sensitive_text(exc.output[-4000:])}") from exc
+            finally:
+                if installed_deps:
+                    self.exec_shell("rm -rf node_modules", cwd=CONTAINER_REPO, timeout=timeout)
+
         candidates = [
-            ("package.json", ["npm", "test"]),
             ("pyproject.toml", ["python", "-m", "pytest"]),
             ("pytest.ini", ["python", "-m", "pytest"]),
         ]
@@ -328,7 +363,7 @@ class DockerProjectSandbox:
 
         output = output_path.read_text(encoding="utf-8", errors="replace")
         if proc.returncode != 0:
-            raise RuntimeError(f"Docker agent command failed ({proc.returncode}):\n{output[-4000:]}")
+            raise RuntimeError(f"Docker agent command failed ({proc.returncode}):\n{redact_sensitive_text(output[-4000:])}")
 
     def _try_exec(self, command: list[str], *, cwd: str, timeout: int) -> bool:
         try:
@@ -336,6 +371,44 @@ class DockerProjectSandbox:
             return True
         except CommandError:
             return False
+
+    def _remote_base_ref(self, base: str, timeout: int) -> str | None:
+        candidates = [f"origin/{base}"]
+        try:
+            head = self.exec(["git", "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"], cwd=CONTAINER_REPO, timeout=timeout).strip()
+            if head:
+                candidates.append(head)
+        except CommandError:
+            pass
+
+        for candidate in candidates:
+            if self._try_exec(["git", "rev-parse", "--verify", f"{candidate}^{{commit}}"], cwd=CONTAINER_REPO, timeout=timeout):
+                return candidate
+
+        try:
+            refs = self.exec(["git", "for-each-ref", "--format=%(refname:short)", "refs/remotes/origin"], cwd=CONTAINER_REPO, timeout=timeout)
+        except CommandError:
+            return None
+        for ref in refs.splitlines():
+            ref = ref.strip()
+            if ref and ref != "origin/HEAD":
+                return ref
+        return None
+
+    def _ensure_remote_base_branch(self, base: str, timeout: int) -> None:
+        if self._try_exec(["git", "rev-parse", "--verify", f"origin/{base}^{{commit}}"], cwd=CONTAINER_REPO, timeout=timeout):
+            return
+
+        current = self.exec(["git", "branch", "--show-current"], cwd=CONTAINER_REPO, timeout=timeout).strip()
+        self.clean_worktree(timeout)
+        self.exec(["git", "checkout", "--orphan", base], cwd=CONTAINER_REPO, timeout=timeout)
+        self._try_exec(["git", "rm", "-rf", "."], cwd=CONTAINER_REPO, timeout=timeout)
+        self.exec(["git", "config", "user.name", self.settings.git_author_name], cwd=CONTAINER_REPO, timeout=timeout)
+        self.exec(["git", "config", "user.email", self.settings.git_author_email], cwd=CONTAINER_REPO, timeout=timeout)
+        self.exec(["git", "commit", "--allow-empty", "-m", f"chore: initialize {base} branch"], cwd=CONTAINER_REPO, timeout=timeout)
+        self.exec(["git", "push", "-u", "origin", f"HEAD:{base}"], cwd=CONTAINER_REPO, timeout=timeout)
+        if current and current != base:
+            self._try_exec(["git", "checkout", current], cwd=CONTAINER_REPO, timeout=timeout)
 
     def _container_exists(self) -> bool:
         proc = subprocess.run(["docker", "inspect", self.container_name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
@@ -431,6 +504,19 @@ class DockerProjectSandbox:
             check=False,
         )
         return proc.returncode == 0
+
+    def _cleanup_agent_process(self, command: str) -> None:
+        name = Path(command).name
+        if not name:
+            return
+        pattern = f"[{name[0]}]{name[1:]}" if len(name) > 1 else name
+        safe_name = shlex.quote(pattern)
+        subprocess.run(
+            ["docker", "exec", self.container_name, "sh", "-lc", f"pkill -TERM -f {safe_name} 2>/dev/null || true"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
 
     def _has_any_env(self, *names: str) -> bool:
         env = os.environ
