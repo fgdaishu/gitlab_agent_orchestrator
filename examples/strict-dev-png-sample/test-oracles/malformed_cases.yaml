@@ -1,0 +1,15 @@
+malformed_cases:
+  - id: truncated_signature
+    input_kind: byte_sequence
+    expected:
+      should_error: true
+      allowed_errors:
+        - TruncatedInput
+
+  - id: chunk_length_above_limit
+    input_kind: byte_sequence
+    expected:
+      should_error: true
+      allowed_errors:
+        - ChunkTooLarge
+

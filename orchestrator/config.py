@@ -56,11 +56,15 @@ class Settings:
     sandbox_codex_command: str
     sandbox_gemini_command: str
     sandbox_pass_env: tuple[str, ...]
+    auto_issue_poll_enabled: bool
+    auto_issue_group_path: str
+    auto_issue_poll_interval_seconds: int
+    auto_issue_seed_existing: bool
 
     @classmethod
     def from_env(cls) -> "Settings":
         return cls(
-            gitlab_url=(_env("GITLAB_URL", "http://192.168.1.251/gitlab") or "").rstrip("/"),
+            gitlab_url=(_env("GITLAB_URL", "https://gitlab.example.com") or "").rstrip("/"),
             gitlab_token=_env("GITLAB_TOKEN", "") or "",
             gitlab_webhook_secret=_env("GITLAB_WEBHOOK_SECRET", "") or "",
             default_agent=_env("DEFAULT_AGENT", "opencode") or "opencode",
@@ -90,6 +94,10 @@ class Settings:
                 for name in (_env("SANDBOX_PASS_ENV", "OPENAI_API_KEY,ANTHROPIC_API_KEY,GEMINI_API_KEY,GOOGLE_API_KEY") or "").split(",")
                 if name.strip()
             ),
+            auto_issue_poll_enabled=(_env("AUTO_ISSUE_POLL_ENABLED", "false") or "false").lower() in {"1", "true", "yes", "on"},
+            auto_issue_group_path=_env("AUTO_ISSUE_GROUP_PATH", "develop") or "develop",
+            auto_issue_poll_interval_seconds=int(_env("AUTO_ISSUE_POLL_INTERVAL_SECONDS", "30") or "30"),
+            auto_issue_seed_existing=(_env("AUTO_ISSUE_SEED_EXISTING", "true") or "true").lower() in {"1", "true", "yes", "on"},
         )
 
     @property

@@ -20,6 +20,8 @@ class JobResponse(BaseModel):
     id: str
     status: str
     agent: str
+    workflow_id: str
+    workflow_task_id: str | None = None
     issue_iid: int
     branch: str | None = None
     merge_request_iid: int | None = None
@@ -76,6 +78,8 @@ def get_job(job_id: str) -> JobResponse:
         id=job.id,
         status=job.status,
         agent=job.agent,
+        workflow_id=job.workflow_id,
+        workflow_task_id=job.workflow_task_id,
         issue_iid=job.issue_iid,
         branch=job.branch,
         merge_request_iid=job.merge_request_iid,
@@ -98,6 +102,8 @@ def retry_job(job_id: str) -> JobResponse:
         id=job.id,
         status=job.status,
         agent=job.agent,
+        workflow_id=job.workflow_id,
+        workflow_task_id=job.workflow_task_id,
         issue_iid=job.issue_iid,
         branch=job.branch,
         merge_request_iid=job.merge_request_iid,
@@ -131,6 +137,8 @@ def cancel_job(job_id: str) -> JobResponse:
         id=job.id,
         status=job.status,
         agent=job.agent,
+        workflow_id=job.workflow_id,
+        workflow_task_id=job.workflow_task_id,
         issue_iid=job.issue_iid,
         branch=job.branch,
         merge_request_iid=job.merge_request_iid,

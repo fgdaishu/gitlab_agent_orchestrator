@@ -2,6 +2,8 @@
 
 This image is used by `AGENT_EXECUTION_BACKEND=docker_project`.
 
+中文说明见 [`README_zh.md`](README_zh.md).
+
 It includes:
 
 - Git

@@ -1,0 +1,12 @@
+modules:
+  - id: PNG-SIGNATURE
+    path: src/signature.rs
+    responsibility: validate PNG signature safely
+
+  - id: PNG-CHUNK
+    path: src/chunk.rs
+    responsibility: parse PNG chunk length, type, data, and CRC fields safely
+
+  - id: PNG-ERROR
+    path: src/error.rs
+    responsibility: expose structured parser errors

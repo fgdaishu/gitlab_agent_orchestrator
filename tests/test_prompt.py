@@ -33,3 +33,16 @@ def test_prompt_requests_tests_when_issue_asks(tmp_path):
     prompt = build_prompt(job, project_rules="")
 
     assert "explicitly asks for testing" in prompt
+
+
+def test_prompt_includes_handoff_instructions_and_context(tmp_path):
+    from orchestrator.db import JobStore
+
+    store = JobStore(tmp_path / "jobs.sqlite3")
+    job = create_job_for_issue(store, issue_iid=3)
+
+    prompt = build_prompt(job, project_rules="", handoff_context="## Handoff from issue #2\n\nUse the new API.")
+
+    assert ".agent/handoffs/issue-3.md" in prompt
+    assert "Dependency handoff context" in prompt
+    assert "Use the new API." in prompt

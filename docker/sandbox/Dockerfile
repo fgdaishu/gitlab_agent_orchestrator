@@ -7,6 +7,7 @@ ARG GEMINI_NPM_PACKAGE=@google/gemini-cli
 ARG INSTALL_OPENCODE=true
 ARG INSTALL_CODEX=true
 ARG INSTALL_GEMINI=true
+ARG RUSTUP_TOOLCHAIN=stable
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
@@ -43,14 +44,21 @@ USER agent
 WORKDIR /workspace
 
 ENV HOME=/home/agent
-ENV PATH=/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin
+ENV PATH=/home/agent/.cargo/bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin
 ENV NO_PROXY=localhost,127.0.0.1,::1
+
+RUN set -eux; \
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+        | sh -s -- -y --profile minimal --default-toolchain "${RUSTUP_TOOLCHAIN}"; \
+    rustup --version
 
 RUN set -eux; \
     git --version; \
     node --version; \
     npm --version; \
     python3 --version; \
+    cargo --version; \
+    rustc --version; \
     rg --version >/dev/null; \
     if [ "${INSTALL_OPENCODE}" = "true" ]; then command -v opencode; fi; \
     if [ "${INSTALL_CODEX}" = "true" ]; then command -v codex; fi; \

@@ -1,0 +1,10 @@
+[package]
+name = "strict_dev_png_sample"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "strict_dev_png_sample"
+path = "src/lib.rs"
+
+[dependencies]

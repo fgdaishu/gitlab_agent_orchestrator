@@ -1,0 +1,8 @@
+module: png_parser_subset
+invariants:
+  - parser must not panic on malformed input
+  - parser path must not use unsafe code
+  - input cursor must never advance beyond available bytes
+  - chunk length must be validated against max_chunk_size before data access
+  - integer conversions must be checked
+  - no allocation is required for signature or chunk field parsing

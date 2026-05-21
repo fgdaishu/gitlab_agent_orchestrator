@@ -22,7 +22,7 @@ $EnvPath = Join-Path $Root ".env"
 $ExamplePath = Join-Path $Root ".env.example"
 
 if ((Test-Path $EnvPath) -and -not $Force) {
-    Write-Host ".env already exists. Use -Force to rewrite it."
+    Write-Host ".env already exists. Use -Force to overwrite it."
     exit 0
 }
 
@@ -31,7 +31,7 @@ if (-not (Test-Path $ExamplePath)) {
 }
 
 if (-not $GitLabUrl) {
-    $GitLabUrl = Read-Host "GitLab URL, for example http://192.168.1.251/gitlab"
+    $GitLabUrl = Read-Host "GitLab URL, for example https://gitlab.example.com"
 }
 if (-not $GitLabToken) {
     $GitLabToken = Read-Host "GitLab access token"

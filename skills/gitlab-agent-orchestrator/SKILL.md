@@ -1,80 +1,352 @@
 ---
 name: gitlab-agent-orchestrator
-description: Install, configure, operate, and troubleshoot the GitLab Agent Orchestrator service that turns GitLab issue labels into opencode, codex, or gemini agent jobs. Use when a user asks Codex to deploy this service, initialize a new GitLab integration, start or stop the API/worker, build the Docker sandbox image, configure GitLab URL/token/webhook secrets, set agent API keys or OAuth, create webhook instructions, or debug why issue labels are not triggering agent work.
+description: Operate and use the GitLab Agent Orchestrator service. Use when a user asks Codex to start/stop/debug the service, configure GitLab webhooks, create GitLab issues for agent execution, choose between default_coding and strict_development workflows, prepare strict task cards/context packs, retry/cancel jobs, inspect labels/MRs/logs, or troubleshoot preflight failures.
 ---
 
 # GitLab Agent Orchestrator
 
 ## Overview
 
-Use this skill as the operator runbook for the GitLab Agent Orchestrator repository. Prefer the repository scripts over hand-written commands so setup is repeatable.
+Use this skill as the runbook for GitLab Agent Orchestrator. The service turns GitLab issue labels into agent jobs, then pushes a branch and creates an MR.
 
-## Workflow
+There are two supported workflow modes:
 
-1. Confirm the current directory is the orchestrator repo by checking for `orchestrator/main.py`, `orchestrator/worker.py`, `.env.example`, and `docker/sandbox/Dockerfile`.
-2. Run `scripts/doctor.ps1` to inspect Python, Git, Docker, `.env`, the sandbox image, and current API health.
-3. If `.env` is missing, collect only the required secrets from the user and run `scripts/init-env.ps1`. Never print or commit tokens.
-4. Build the sandbox image with `docker/sandbox/build.ps1` when `gitlab-agent-sandbox:latest` is missing or the Dockerfile changed.
-5. Start services with `scripts/start.ps1`, then verify with `scripts/status.ps1` and `GET /healthz`.
-6. Give the user the webhook URL: `http://<orchestrator-host-ip>:8080/gitlab/webhook`, plus the `GITLAB_WEBHOOK_SECRET` value they configured.
-7. For Codex or Gemini, initialize auth inside the project sandbox after the first project container exists, or use API keys through `SANDBOX_PASS_ENV`.
-8. Test with a GitLab issue label: `agent:opencode`, `agent:codex`, or `agent:gemini`.
-9. Do not expect orchestrator-level automatic validation. If a user wants tests, tell them to write that requirement in the issue or comment so the agent runs tests as part of its task.
+- `default_coding`: low-friction general development. This is the default when issue metadata does not specify a workflow.
+- `strict_development`: strict task-card development with preflight, file boundaries, validation commands, handoff, and report generation.
 
-## Scripts
+Use `Workflow: strict` for strict mode. It resolves to `strict_development`.
 
-Run scripts from the repository root:
+## Initial Checks
 
-- `scripts/doctor.ps1` - preflight checks.
-- `scripts/init-env.ps1` - create `.env` from `.env.example`; use `-Force` only when the user explicitly wants to rewrite `.env`.
-- `docker/sandbox/build.ps1` - build `gitlab-agent-sandbox:latest`.
-- `scripts/start.ps1` - start FastAPI and worker in hidden background PowerShell processes.
-- `scripts/status.ps1` - show service, health, and Docker project sandbox status.
-- `scripts/stop.ps1` - stop API and worker processes started by `scripts/start.ps1`.
-- `scripts/install-skill.ps1` - copy this skill into `$CODEX_HOME/skills` or `~/.codex/skills`.
-
-## Required User Inputs
-
-Ask for these when `.env` does not exist:
-
-- GitLab URL, for example `http://192.168.1.251/gitlab` or `https://gitlab.com`.
-- GitLab access token with enough permissions to read/write issues, labels, branches, and merge requests.
-- GitLab webhook secret.
-- Desired default agent, usually `opencode`.
-- Optional model/API credentials: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `GOOGLE_API_KEY`, or Vertex variables. These can be written by `scripts/init-env.ps1` and passed into Docker by `SANDBOX_PASS_ENV`.
-
-Do not ask for a token if `.env` already exists and appears complete. Do not echo secret values in summaries.
-
-## Agent Auth
-
-Use `opencode` with `SANDBOX_OPENCODE_MODEL=opencode/big-pickle` for the lowest-friction smoke test.
-
-Codex requires sandbox-local auth unless an API key flow is configured. Once the project container exists, use:
+1. Confirm the current directory is the orchestrator repo by checking for:
+   - `orchestrator/main.py`
+   - `orchestrator/worker.py`
+   - `.env.example`
+   - `docker/sandbox/Dockerfile`
+2. Run `scripts/doctor.ps1` when diagnosing setup.
+3. Verify the API:
 
 ```powershell
-docker exec -it gitlab-agent-project-<project_id> codex login --device-auth
+Invoke-RestMethod http://127.0.0.1:8080/healthz
 ```
 
-Gemini OAuth is usable in the current Docker sandbox flow. Once the project container exists, use:
+4. Check that no old process is occupying the API port:
 
 ```powershell
-docker exec -it gitlab-agent-project-<project_id> gemini
+netstat -ano | Select-String ':8080'
 ```
 
-If OAuth is unsuitable in the user's environment, configure `GEMINI_API_KEY` or Vertex variables on the orchestrator host and include them in `SANDBOX_PASS_ENV`, then restart the service.
+Use `scripts/stop.ps1 -Port 8080` before restarting.
 
-## Webhook Guidance
+## Service Operations
 
-The webhook URL must point to the machine running the orchestrator API, not necessarily the GitLab host:
+Run scripts from the repository root.
+
+Start:
+
+```powershell
+.\scripts\start.ps1 -Port 8080
+```
+
+Stop:
+
+```powershell
+.\scripts\stop.ps1 -Port 8080
+```
+
+Status:
+
+```powershell
+.\scripts\status.ps1
+```
+
+Build sandbox image:
+
+```powershell
+.\docker\sandbox\build.ps1
+```
+
+Install this skill:
+
+```powershell
+.\scripts\install-skill.ps1
+```
+
+## GitLab Webhook
+
+Webhook URL:
 
 ```text
 http://<orchestrator-host-ip>:8080/gitlab/webhook
 ```
 
-In GitLab, enable issue events. Keep note/comment events disabled unless the code is explicitly changed to support them.
+Enable only:
 
-For GitLab.com, the orchestrator must be reachable from the public internet over an acceptable URL, usually HTTPS via a reverse proxy or tunnel.
+```text
+Issues events
+```
 
-## Troubleshooting
+The webhook secret must match `.env`:
 
-Read `references/troubleshooting.md` when labels do not trigger jobs, jobs stay running, Docker containers are missing, GitLab comments are not written, or agent authentication fails.
+```text
+GITLAB_WEBHOOK_SECRET
+```
+
+The webhook must point to the machine running the orchestrator API. If the user wants local gao/orchestrator, do not point GitLab to an old server-side service.
+
+## Agent Labels
+
+Adding one of these labels to an issue triggers a job:
+
+```text
+agent:opencode
+agent:codex
+agent:gemini
+```
+
+Recommended smoke-test label:
+
+```text
+agent:opencode
+```
+
+## Default Coding Workflow
+
+Use this for ordinary coding tasks.
+
+Issue body example:
+
+```markdown
+Fix the parser so it rejects empty input.
+
+Please add or update tests if needed.
+```
+
+Then add:
+
+```text
+agent:opencode
+```
+
+Expected labels:
+
+- running: `agent:running`
+- success: `agent:review`
+- failure: `agent:failed`
+
+Default mode still requires the agent to create:
+
+```text
+.agent/handoffs/issue-<iid>.md
+```
+
+## Strict Development Workflow
+
+Use this for structured, auditable tasks with explicit boundaries.
+
+Issue body template:
+
+```markdown
+## Agent Metadata
+
+Workflow: strict
+
+Task-ID: <TASK-ID>
+
+## Request
+
+Implement and validate the task described by `task-cards/<TASK-ID>.yaml`.
+
+Follow `context-packs/<TASK-ID>.md`.
+
+Do not expand scope beyond the task card.
+```
+
+Then add:
+
+```text
+agent:opencode
+```
+
+Expected labels:
+
+- running: `strict:running`
+- success: `strict:review`
+- failure: `strict:validation-failed`
+
+## Strict Repo Materials
+
+Strict mode expects these repo materials:
+
+```text
+task-cards/<TASK-ID>.yaml
+context-packs/<TASK-ID>.md
+contracts/...
+.agent/handoffs/
+reports/
+```
+
+Minimum task card shape:
+
+```yaml
+task_id: <TASK-ID>
+title: Short task title
+module: MODULE-NAME
+
+objective:
+  Describe what must be achieved.
+
+must_follow:
+  - no unsafe code
+
+relevant_contracts:
+  - contracts/example.yaml
+
+files_allowed:
+  - Cargo.lock
+  - src/example.rs
+  - tests/example.rs
+  - .agent/handoffs/
+  - reports/
+
+forbidden_files:
+  - docs/original-prd.md
+
+validation_commands:
+  - cargo test --test example
+
+handoff_required:
+  - implementation summary
+  - tests run
+  - edge cases handled
+```
+
+For Rust tasks that run `cargo`, include `Cargo.lock` in `files_allowed`. If dependencies must not change, forbid `Cargo.toml` rather than forbidding `Cargo.lock`.
+
+## Dependencies Between Issues
+
+Use hard dependency:
+
+```markdown
+Depends-On: #3
+```
+
+Use best-effort context:
+
+```markdown
+Context-From: #4
+```
+
+`Depends-On` requires the referenced issue to have a successful job and an existing handoff file.
+
+## Preflight Troubleshooting
+
+Strict mode preflight runs before the agent starts.
+
+Common failures:
+
+- `task card not found`: create `task-cards/<TASK-ID>.yaml` or fix `Task-ID`.
+- `context pack not found`: create `context-packs/<TASK-ID>.md` or fix `Task-ID`.
+- `task_id must match issue Task-ID`: align task card and issue metadata.
+- `files_allowed must include .agent/handoffs/`: allow handoff output.
+- `files_allowed must include reports/`: allow validation report output.
+- `Cargo.lock`: add it to `files_allowed` for Rust cargo tasks.
+- `referenced contract not found`: fix `relevant_contracts`.
+- `required tool ... is not available`: rebuild sandbox or install/configure the tool.
+- `required tool ... is not recognized`: use a supported validation command tool or extend preflight detection.
+
+If preflight fails, do not edit code first. Fix repo materials or sandbox tooling, then retry the job.
+
+## Job API
+
+Check job:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8080/jobs/<job_id>
+```
+
+View log:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8080/jobs/<job_id>/log
+```
+
+Retry:
+
+```powershell
+Invoke-RestMethod -Method Post http://127.0.0.1:8080/jobs/<job_id>/retry
+```
+
+Cancel:
+
+```powershell
+Invoke-RestMethod -Method Post http://127.0.0.1:8080/jobs/<job_id>/cancel
+```
+
+## Sandbox Tools
+
+The default sandbox image includes:
+
+```text
+opencode
+codex
+gemini
+cargo
+rustc
+git
+node
+python
+ripgrep
+```
+
+Codex may require:
+
+```powershell
+docker exec -it gitlab-agent-project-<project_id> codex login --device-auth
+```
+
+Gemini may require:
+
+```powershell
+docker exec -it gitlab-agent-project-<project_id> gemini
+```
+
+If OAuth is unsuitable, configure API keys and include them in `SANDBOX_PASS_ENV`.
+
+## Example User Prompts For Codex
+
+Start local service:
+
+```text
+Use the gitlab-agent-orchestrator skill. Start the local orchestrator on port 8080 and verify health.
+```
+
+Create a default coding issue:
+
+```text
+Use the gitlab-agent-orchestrator skill. Create a default coding issue in project 49 to fix empty input handling, then add agent:opencode.
+```
+
+Create a strict issue:
+
+```text
+Use the gitlab-agent-orchestrator skill. Create a strict workflow issue for Task-ID PNG-SIGNATURE-001 in project 49 and trigger agent:opencode.
+```
+
+Diagnose no reaction after label:
+
+```text
+Use the gitlab-agent-orchestrator skill. The issue label was added but nothing happened. Check webhook delivery, API logs, worker status, DB jobs, and Docker access.
+```
+
+Diagnose strict preflight failure:
+
+```text
+Use the gitlab-agent-orchestrator skill. Explain why the strict workflow issue failed preflight and tell me exactly which repo material to fix.
+```
+
+Retry failed job:
+
+```text
+Use the gitlab-agent-orchestrator skill. Retry job <job_id> after I fixed the task card.
+```

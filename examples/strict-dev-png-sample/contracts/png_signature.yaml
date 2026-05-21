@@ -1,0 +1,23 @@
+contract_id: PNG-SIGNATURE-CONTRACT
+module: signature
+
+inputs:
+  - byte_slice
+
+valid_behavior:
+  - accept exactly the PNG 8-byte signature prefix
+  - return Ok when the first 8 bytes match the PNG signature
+
+invalid_behavior:
+  - return TruncatedInput when fewer than 8 bytes are available
+  - return InvalidSignature when 8 bytes are available but do not match
+
+security_constraints:
+  - no unsafe code
+  - no panic on malformed input
+  - no allocation
+
+error_model:
+  - TruncatedInput
+  - InvalidSignature
+

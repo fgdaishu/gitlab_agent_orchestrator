@@ -167,6 +167,21 @@ def has_changes(repo: Path) -> bool:
     return bool(status.strip())
 
 
+def changed_files(repo: Path) -> list[str]:
+    output = run(["git", "status", "--porcelain", "--untracked-files=all"], cwd=repo)
+    files: list[str] = []
+    for line in output.splitlines():
+        if not line:
+            continue
+        path = line[3:].strip()
+        if " -> " in path:
+            path = path.split(" -> ", 1)[1].strip()
+        normalized = path.replace("\\", "/")
+        if normalized and normalized not in files:
+            files.append(normalized)
+    return files
+
+
 def current_head(repo: Path) -> str:
     try:
         return run(["git", "rev-parse", "HEAD"], cwd=repo).strip()

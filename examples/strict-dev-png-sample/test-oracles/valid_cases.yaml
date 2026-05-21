@@ -1,0 +1,7 @@
+valid_cases:
+  - id: png_signature_only
+    input_kind: byte_sequence
+    expected:
+      should_error: false
+      module: signature
+

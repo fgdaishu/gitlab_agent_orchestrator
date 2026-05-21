@@ -1,0 +1,39 @@
+task_id: PNG-CHUNK-001
+title: Implement safe PNG chunk reader
+module: PNG-CHUNK
+
+objective:
+  Ensure PNG chunk field parsing is implemented safely and covered by tests.
+
+must_follow:
+  - no unsafe code
+  - no allocation before length validation
+  - use checked integer conversion and checked offset arithmetic
+  - reject chunks larger than max_chunk_size
+  - reject invalid chunk type bytes
+  - never panic on malformed input
+  - do not validate semantic chunk ordering here
+
+relevant_contracts:
+  - contracts/png_chunk.yaml
+
+files_allowed:
+  - Cargo.lock
+  - src/chunk.rs
+  - src/error.rs
+  - src/lib.rs
+  - tests/chunk.rs
+  - .agent/handoffs/
+  - reports/
+
+forbidden_files:
+  - docs/
+
+validation_commands:
+  - cargo test --test chunk
+
+handoff_required:
+  - implementation summary
+  - tests run
+  - edge cases handled
+  - next recommended task

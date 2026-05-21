@@ -63,3 +63,13 @@ def test_extract_issue_job():
     assert data["project_id"] == 123
     assert data["issue_iid"] == 23
     assert data["repo_http_url"] == "http://gitlab.example/group/project.git"
+    assert data["workflow_id"] == "default_coding"
+    assert data["workflow_task_id"] is None
+
+
+def test_extract_issue_job_with_workflow_metadata():
+    payload = issue_payload([], ["agent:opencode"])
+    payload["object_attributes"]["description"] = "## Agent Metadata\n\nWorkflow: strict\nTask-ID: PNG-CHUNK-001\n"
+    data = extract_issue_job(payload, "agent:opencode", "opencode")
+    assert data["workflow_id"] == "strict_development"
+    assert data["workflow_task_id"] == "PNG-CHUNK-001"

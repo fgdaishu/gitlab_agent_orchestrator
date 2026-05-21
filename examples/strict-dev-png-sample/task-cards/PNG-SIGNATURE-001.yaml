@@ -1,0 +1,37 @@
+task_id: PNG-SIGNATURE-001
+title: Implement safe PNG signature validation
+module: PNG-SIGNATURE
+
+objective:
+  Ensure PNG signature validation is implemented safely and covered by tests.
+
+must_follow:
+  - no unsafe code
+  - no allocation
+  - return structured errors
+  - never panic on malformed input
+  - do not expand beyond signature validation
+
+relevant_contracts:
+  - contracts/png_signature.yaml
+
+files_allowed:
+  - Cargo.lock
+  - src/signature.rs
+  - src/error.rs
+  - src/lib.rs
+  - tests/signature.rs
+  - .agent/handoffs/
+  - reports/
+
+forbidden_files:
+  - docs/
+
+validation_commands:
+  - cargo test --test signature
+
+handoff_required:
+  - implementation summary
+  - tests run
+  - edge cases handled
+  - context for PNG-CHUNK-001

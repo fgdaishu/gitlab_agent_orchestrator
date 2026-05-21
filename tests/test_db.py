@@ -23,6 +23,8 @@ def test_create_and_claim_job(tmp_path):
     store = JobStore(tmp_path / "jobs.sqlite3")
     job = create_job(store)
     assert job.status == "pending"
+    assert job.workflow_id == "default_coding"
+    assert job.workflow_task_id is None
 
     claimed = store.claim_next()
     assert claimed is not None

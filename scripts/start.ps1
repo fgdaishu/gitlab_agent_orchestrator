@@ -15,13 +15,13 @@ New-Item -ItemType Directory -Force -Path "logs" | Out-Null
 $api = Start-Process -WindowStyle Hidden -FilePath powershell.exe -ArgumentList @(
     "-NoProfile",
     "-Command",
-    "cd `"$Root`"; python -m uvicorn orchestrator.main:app --host 0.0.0.0 --port $Port *> logs\api.out.log"
+    "cd `"$Root`"; python -B -m uvicorn orchestrator.main:app --host 0.0.0.0 --port $Port *> logs\api.out.log"
 ) -PassThru
 
 $worker = Start-Process -WindowStyle Hidden -FilePath powershell.exe -ArgumentList @(
     "-NoProfile",
     "-Command",
-    "cd `"$Root`"; python -m orchestrator.worker *> logs\worker.out.log"
+    "cd `"$Root`"; python -B -m orchestrator.worker *> logs\worker.out.log"
 ) -PassThru
 
 Set-Content -Path "logs\api.pid" -Value $api.Id -Encoding ASCII

@@ -1,0 +1,21 @@
+project:
+  name: strict-dev-png-sample
+  source_domain: png
+  source_version: 1.6.x
+  target_language: rust
+  compatibility_target: L1
+  optional_c_api: false
+
+scope:
+  include:
+    - PNG signature validation
+    - safe PNG chunk reader
+  exclude:
+    - full PNG decode
+    - C ABI compatibility
+    - encoder
+
+security_policy:
+  forbid_unsafe_in_parser: true
+  require_resource_limits: true
+  malformed_input_must_not_panic: true

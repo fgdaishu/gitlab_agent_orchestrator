@@ -49,6 +49,25 @@ class GitLabClient:
     def get_issue(self, project_id: int, issue_iid: int) -> dict[str, Any]:
         return self._request("GET", f"/projects/{project_id}/issues/{issue_iid}")
 
+    def get_project(self, project_id: int) -> dict[str, Any]:
+        return self._request("GET", f"/projects/{project_id}")
+
+    def list_group_open_issues(self, group_path: str) -> list[dict[str, Any]]:
+        encoded_group = parse.quote(group_path, safe="")
+        issues: list[dict[str, Any]] = []
+        page = 1
+        while True:
+            result = self._request(
+                "GET",
+                f"/groups/{encoded_group}/issues?state=opened&order_by=created_at&sort=asc&per_page=100&page={page}",
+            )
+            if not isinstance(result, list) or not result:
+                return issues
+            issues.extend(result)
+            if len(result) < 100:
+                return issues
+            page += 1
+
     def add_issue_note(self, project_id: int, issue_iid: int, body: str) -> Any:
         return self._request("POST", f"/projects/{project_id}/issues/{issue_iid}/notes", {"body": body})
 

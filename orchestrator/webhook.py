@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from .workflows import extract_workflow_metadata
+
 AGENT_LABEL_PREFIX = "agent:"
 LABEL_TO_AGENT = {
     "agent:codex": "codex",
@@ -54,14 +56,18 @@ def extract_issue_job(payload: dict[str, Any], trigger_label: str, agent: str) -
     project = payload.get("project") or {}
     issue = payload.get("object_attributes") or {}
     project_id = int(project.get("id") or issue.get("project_id"))
+    description = issue.get("description") or ""
+    workflow = extract_workflow_metadata(str(description))
     return {
         "project_id": project_id,
         "project_path": project.get("path_with_namespace") or project.get("web_url") or str(project_id),
         "issue_iid": int(issue["iid"]),
         "issue_title": issue.get("title") or "",
-        "issue_description": issue.get("description") or "",
+        "issue_description": description,
         "trigger_label": trigger_label,
         "agent": agent,
+        "workflow_id": workflow.workflow_id,
+        "workflow_task_id": workflow.workflow_task_id,
         "repo_http_url": project.get("git_http_url") or project.get("http_url") or "",
         "default_branch": project.get("default_branch") or "main",
     }

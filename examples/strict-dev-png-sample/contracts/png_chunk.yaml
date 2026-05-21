@@ -1,0 +1,38 @@
+contract_id: PNG-CHUNK-CONTRACT
+module: chunk
+
+inputs:
+  - byte_slice
+  - max_chunk_size
+
+outputs:
+  - length
+  - chunk_type
+  - data_slice
+  - crc
+  - remaining_input
+
+valid_behavior:
+  - parse chunk length as big-endian u32
+  - parse chunk type as exactly 4 ASCII alphabetic bytes
+  - reject length greater than max_chunk_size before data access
+  - return a borrowed data slice without allocating
+  - parse CRC as big-endian u32 after chunk data
+
+invalid_behavior:
+  - reject inputs shorter than a minimum chunk header and CRC
+  - reject truncated chunk data or CRC
+  - reject non alphabetic chunk type bytes
+  - reject impossible checked integer conversions
+
+security_constraints:
+  - no unsafe code
+  - no unchecked indexing beyond validated bounds
+  - no allocation before length validation
+  - no panic on malformed input
+
+error_model:
+  - TruncatedInput
+  - ChunkTooLarge
+  - InvalidChunkType
+

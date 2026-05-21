@@ -37,6 +37,8 @@ class Job:
     trigger_type: str
     trigger_label: str
     agent: str
+    workflow_id: str
+    workflow_task_id: str | None
     status: str
     repo_http_url: str
     default_branch: str

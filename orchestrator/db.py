@@ -18,6 +18,8 @@ CREATE TABLE IF NOT EXISTS jobs (
   trigger_type TEXT NOT NULL,
   trigger_label TEXT NOT NULL,
   agent TEXT NOT NULL,
+  workflow_id TEXT NOT NULL DEFAULT 'default_coding',
+  workflow_task_id TEXT,
   status TEXT NOT NULL,
   repo_http_url TEXT NOT NULL,
   default_branch TEXT NOT NULL,
@@ -49,6 +51,22 @@ CREATE TABLE IF NOT EXISTS project_sandboxes (
 );
 
 CREATE INDEX IF NOT EXISTS idx_project_sandboxes_status ON project_sandboxes(status);
+
+CREATE TABLE IF NOT EXISTS auto_issue_seen (
+  project_id INTEGER NOT NULL,
+  issue_iid INTEGER NOT NULL,
+  issue_id INTEGER,
+  project_path TEXT,
+  seen_at TEXT NOT NULL,
+  job_id TEXT,
+  PRIMARY KEY (project_id, issue_iid)
+);
+
+CREATE TABLE IF NOT EXISTS poller_state (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
 """
 
 
@@ -84,6 +102,8 @@ class JobStore:
                       trigger_type TEXT NOT NULL,
                       trigger_label TEXT NOT NULL,
                       agent TEXT NOT NULL,
+                      workflow_id TEXT NOT NULL DEFAULT 'default_coding',
+                      workflow_task_id TEXT,
                       status TEXT NOT NULL,
                       repo_http_url TEXT NOT NULL,
                       default_branch TEXT NOT NULL,
@@ -99,12 +119,12 @@ class JobStore:
                     );
                     INSERT INTO jobs (
                       id, project_id, project_path, issue_iid, issue_title, issue_description,
-                      trigger_type, trigger_label, agent, status, repo_http_url, default_branch,
+                      trigger_type, trigger_label, agent, workflow_id, workflow_task_id, status, repo_http_url, default_branch,
                       branch, merge_request_iid, created_at, started_at, finished_at, error, log_path
                     )
                     SELECT
                       id, project_id, project_path, issue_iid, issue_title, issue_description,
-                      trigger_type, trigger_label, agent, status, repo_http_url, default_branch,
+                      trigger_type, trigger_label, agent, 'default_coding', NULL, status, repo_http_url, default_branch,
                       branch, merge_request_iid, created_at, started_at, finished_at, error, log_path
                     FROM jobs_old_unique;
                     DROP TABLE jobs_old_unique;
@@ -112,6 +132,8 @@ class JobStore:
                 )
             self._ensure_column(conn, "jobs", "sandbox_id", "INTEGER")
             self._ensure_column(conn, "jobs", "workspace_path", "TEXT")
+            self._ensure_column(conn, "jobs", "workflow_id", "TEXT NOT NULL DEFAULT 'default_coding'")
+            self._ensure_column(conn, "jobs", "workflow_task_id", "TEXT")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_jobs_status_created ON jobs(status, created_at)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_project_sandboxes_status ON project_sandboxes(status)")
 
@@ -132,6 +154,8 @@ class JobStore:
         agent: str,
         repo_http_url: str,
         default_branch: str,
+        workflow_id: str = "default_coding",
+        workflow_task_id: str | None = None,
     ) -> Job:
         job_id = f"job_{uuid.uuid4().hex[:12]}"
         with self.connect() as conn:
@@ -151,10 +175,10 @@ class JobStore:
                 """
                 INSERT INTO jobs (
                   id, project_id, project_path, issue_iid, issue_title, issue_description,
-                  trigger_type, trigger_label, agent, status, repo_http_url, default_branch,
+                  trigger_type, trigger_label, agent, workflow_id, workflow_task_id, status, repo_http_url, default_branch,
                   created_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     job_id,
@@ -166,6 +190,8 @@ class JobStore:
                     "label_added",
                     trigger_label,
                     agent,
+                    workflow_id,
+                    workflow_task_id,
                     JobStatus.pending,
                     repo_http_url,
                     default_branch,
@@ -174,6 +200,56 @@ class JobStore:
             )
             row = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
             return Job.from_row(row)
+
+    def is_auto_issue_seen(self, project_id: int, issue_iid: int) -> bool:
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM auto_issue_seen WHERE project_id = ? AND issue_iid = ?",
+                (project_id, issue_iid),
+            ).fetchone()
+        return row is not None
+
+    def mark_auto_issue_seen(
+        self,
+        *,
+        project_id: int,
+        issue_iid: int,
+        issue_id: int | None = None,
+        project_path: str | None = None,
+        job_id: str | None = None,
+    ) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO auto_issue_seen (
+                  project_id, issue_iid, issue_id, project_path, seen_at, job_id
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(project_id, issue_iid) DO UPDATE SET
+                  issue_id = COALESCE(excluded.issue_id, auto_issue_seen.issue_id),
+                  project_path = COALESCE(excluded.project_path, auto_issue_seen.project_path),
+                  job_id = COALESCE(excluded.job_id, auto_issue_seen.job_id)
+                """,
+                (project_id, issue_iid, issue_id, project_path, utc_now(), job_id),
+            )
+
+    def get_poller_state(self, key: str) -> str | None:
+        with self.connect() as conn:
+            row = conn.execute("SELECT value FROM poller_state WHERE key = ?", (key,)).fetchone()
+        return str(row["value"]) if row else None
+
+    def set_poller_state(self, key: str, value: str) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO poller_state (key, value, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(key) DO UPDATE SET
+                  value = excluded.value,
+                  updated_at = excluded.updated_at
+                """,
+                (key, value, utc_now()),
+            )
 
     def get_job(self, job_id: str) -> Job | None:
         with self.connect() as conn:
